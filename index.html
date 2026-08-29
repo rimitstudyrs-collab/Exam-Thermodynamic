@@ -7,7 +7,7 @@
   
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;600;700&family=Kalam:wght@400;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;600;700&display=swap" rel="stylesheet">
   
   <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
 
@@ -34,22 +34,89 @@
     const auth = getAuth(app);
     const db = getFirestore(app);
     
-    // নতুন অ্যাপ আইডি (যাতে আগের পরীক্ষার লিডারবোর্ডের সাথে মিলে না যায়)
+    // অ্যাপ আইডি
     const appId = typeof __app_id !== 'undefined' ? __app_id : 'physics-thermodynamics-mcq-v1';
 
     let currentUser = null;
     let userProfile = null;
     let warningCount = 0;
     
-    // সময়সীমা: ৩০ মিনিট (সেকেন্ডে)
     const examDuration = 30 * 60; 
     let totalSeconds = examDuration;
     let timerInterval = null;
     let userAnswers = {};
+    let finalTakenSeconds = 0;
 
     const totalQuestions = 30;
 
-    // তাপগতিবিদ্যা প্রশ্নের সঠিক উত্তরের তালিকা
+    // প্রশ্নের উত্তর সংক্রান্ত অপশন টেক্সট
+    const optionTexts = {
+      q1: { A: "(ক) প্রথম সূত্র", B: "(খ) দ্বিতীয় সূত্র", C: "(গ) শূন্যতম সূত্র", D: "(ঘ) তৃতীয় সূত্র" },
+      q2: { A: "(ক) ভরবেগ সংরক্ষণ নীতি", B: "(খ) আধান সংরক্ষণ নীতি", C: "(গ) শক্তি সংরক্ষণের নীতি", D: "(ঘ) ভর সংরক্ষণ নীতি" },
+      q3: { A: "(ক) চাপ", B: "(খ) আয়তন", C: "(গ) তাপমাত্রা", D: "(ঘ) তাপ" },
+      q4: { A: "(ক) ধনাত্মক", B: "(খ) ঋণাত্মক", C: "(গ) অসীম", D: "(ঘ) শূন্য" },
+      q5: { A: "(ক) চাপ", B: "(খ) তাপমাত্রা", C: "(গ) সিস্টেমের মোট তাপ (Q)", D: "(ঘ) আয়তন" },
+      q6: { A: "(ক) 1.33", B: "(খ) 1.40", C: "(গ) 1.67", D: "(ঘ) 1.28" },
+      q7: { A: "(ক) C_v - C_p = R", B: "(খ) C_p - C_v = R", C: "(গ) C_p + C_v = R", D: "(ঘ) C_p / C_v = R" },
+      q8: { A: "(ক) W = P\\Delta V", B: "(খ) W = nRT", C: "(গ) W = 0", D: "(ঘ) W = Q" },
+      q9: { A: "(ক) J/mol", B: "(খ) J/K", C: "(গ) K/J", D: "(ঘ) J·K" },
+      q10: { A: "(ক) বৃদ্ধি পায়", B: "(খ) হ্রাস পায়", C: "(গ) শূন্য থাকে", D: "(ঘ) অসীম হয়" },
+      q11: { A: "(ক) বৃদ্ধি পায়", B: "(খ) হ্রাস পায়", C: "(গ) শূন্য থাকে", D: "(ঘ) ধ্রুব থাকে" },
+      q12: { A: "(ক) 1 - T_1/T_2", B: "(খ) 1 - T_2/T_1", C: "(গ) (T_1 - T_2)/T_2", D: "(ঘ) T_2/T_1" },
+      q13: { A: "(ক) ২ টি", B: "(খ) ৩ টি", C: "(গ) ৪ টি", D: "(ঘ) ৫ টি" },
+      q14: { A: "(ক) 100 K", B: "(খ) 273 K", C: "(গ) 0 K", D: "(ঘ) অসীম" },
+      q15: { A: "(ক) কেবল চাপ", B: "(খ) কেবল আয়তন", C: "(গ) কেবল তাপমাত্রা", D: "(ঘ) চাপ ও আয়তন উভয়ই" },
+      q16: { A: "(ক) PV = ধ্রুবক", B: "(খ) PV^\\gamma = ধ্রুবক", C: "(গ) TV^{\\gamma-1} = ধ্রুবক", D: "(ঘ) P^\\gamma V = ধ্রুবক" },
+      q17: { A: "(ক) 1.33", B: "(খ) 1.40", C: "(গ) 1.67", D: "(ঘ) 1.28" },
+      q18: { A: "(ক) W = 0", B: "(খ) W = P(V_2 - V_1)", C: "(গ) W = nRT\\ln(V_2/V_1)", D: "(ঘ) W = C_p\\Delta T" },
+      q19: { A: "(ক) সমউষ্ণ প্রক্রিয়া", B: "(খ) সমচাপ প্রক্রিয়া", C: "(গ) সমআয়তন প্রক্রিয়া", D: "(ঘ) রুদ্ধতাপীয় প্রক্রিয়া" },
+      q20: { A: "(ক) শক্তি অবিনশ্বর", B: "(খ) বাহ্যিক সাহায্য ছাড়া তাপ স্বতঃস্ফূর্তভাবে নিম্ন তাপমাত্রা থেকে উচ্চ তাপমাত্রার দিকে প্রবাহিত হয় না", C: "(গ) সিস্টেমের অভ্যন্তরীণ শক্তি ধ্রুব থাকে", D: "(ঘ) পরম শূন্য তাপমাত্রায় এন্ট্রপি শূন্য হয়" },
+      q21: { A: "(ক) 40%", B: "(খ) 50%", C: "(গ) 60%", D: "(ঘ) 75%" },
+      q22: { A: "(ক) 0.758", B: "(খ) 0.500", C: "(গ) 1.319", D: "(ঘ) 0.812" },
+      q23: { A: "(ক) 12.31 J/K", B: "(খ) 10.51 J/K", C: "(গ) 14.32 J/K", D: "(ঘ) 11.21 J/K" },
+      q24: { A: "(ক) 400 K", B: "(খ) 500 K", C: "(গ) 600 K", D: "(ঘ) 300 K" },
+      q25: { A: "(ক) চক্র দ্বারা আবদ্ধ ক্ষেত্রের ক্ষেত্রফল", B: "(খ) শূন্য", C: "(গ) অভ্যন্তরীণ শক্তির পরিবর্তন", D: "(ঘ) তাপমাত্রার পরিবর্তন" },
+      q26: { A: "(ক) 1000 J", B: "(খ) 40 J", C: "(গ) 205 J", D: "(ঘ) 50 J" },
+      q27: { A: "(ক) বৃদ্ধি পায়", B: "(খ) হ্রাস পায়", C: "(গ) অপরিবর্তিত থাকে", D: "(ঘ) প্রথমে কমে পরে বাড়ে" },
+      q28: { A: "(ক) 2740 J", B: "(খ) 7482 J", C: "(গ) 1370 J", D: "(ঘ) 3300 J" },
+      q29: { A: "(ক) 1.67", B: "(খ) 1.40", C: "(গ) 1.33", D: "(ঘ) 1.28" },
+      q30: { A: "(ক) 200 J", B: "(খ) 400 J", C: "(গ) 600 J", D: "(ঘ) 100 J" }
+    };
+
+    // ব্যাখ্যা ও সমাধান (MathJax যুক্ত করা হয়েছে)
+    const explanations = {
+      q1: "তাপগতিবিদ্যার শূন্যতম সূত্র অনুযায়ী, দুটি বস্তু যদি ৩য় কোনো বস্তুর সাথে তাপীয় সাম্যাবস্থায় থাকে, তবে তারা পরস্পরের সাথেও সাম্যাবস্থায় থাকবে। এই নীতির উপর ভিত্তি করেই থার্মোমিটার তৈরি করা হয়।",
+      q2: "প্রথম সূত্র \\(\\Delta Q = \\Delta U + W\\) প্রকাশ করে যে সরবরাহকৃত তাপশক্তি অভ্যন্তরীণ শক্তি বৃদ্ধি ও কাজের রূপান্তরে ব্যবহৃত হয়। অর্থাৎ শক্তি সৃষ্টি বা ধ্বংস হয় না, রূপান্তর হয় মাত্র।",
+      q3: "সমউষ্ণ প্রক্রিয়ার সংজ্ঞাই হলো যে প্রক্রিয়ায় সিস্টেমের তাপমাত্রা ধ্রুব থাকে (\\(T = \\text{constant}\\))।",
+      q4: "আদর্শ গ্যাসের অভ্যন্তরীণ শক্তি কেবল তাপমাত্রার উপর নির্ভর করে (\\(U \\propto T\\))। সমউষ্ণ প্রক্রিয়ায় \\(\\Delta T = 0\\), তাই অভ্যন্তরীণ শক্তির পরিবর্তন \\(\\Delta U = 0\\) হয়।",
+      q5: "রুদ্ধতাপীয় প্রক্রিয়ায় সিস্টেম ও পরিবেশের মধ্যে কোনো তাপের আদান-প্রদান ঘটে না (\\(\\Delta Q = 0\\)), অর্থাৎ মোট তাপ স্থির থাকে।",
+      q6: "একপারমাণবিক গ্যাসের (যেমন: \\(\\text{He}, \\text{Ar}\\)) জন্য স্বাধীনতার মাত্রা \\(f = 3\\)। তাই \\(\\gamma = 1 + \\frac{2}{f} = 1 + \\frac{2}{3} \\approx 1.67\\)।",
+      q7: "সমচাপ ও সমআয়তন মোলীয় তাপধারণ ক্ষমতার মধ্যকার মেয়ারের সম্পর্ক হলো \\(C_p - C_v = R\\)।",
+      q8: "কাজ \\(W = P \\Delta V\\)। সমআয়তন প্রক্রিয়ায় আয়তনের পরিবর্তন \\(\\Delta V = 0\\) হওয়ায় কৃতকাজ \\(W = 0\\)।",
+      q9: "এন্ট্রপির পরিবর্তন \\(dS = \\frac{dQ}{T}\\)। তাপের একক জুল (\\(\\text{J}\\)) এবং তাপমাত্রার একক কেলভিন (\\(\\text{K}\\)), ফলে একক হলো \\(\\text{J/K}\\)।",
+      q10: "প্রত্যাবর্তী প্রক্রিয়ায় সিস্টেম ও পরিবেশের মোট এন্ট্রপির পরিবর্তন শূন্য (\\(\\Delta S_{\\text{universe}} = 0\\))।",
+      q11: "তাপগতিবিদ্যার দ্বিতীয় সূত্রানুসারে, প্রকৃতির যেকোনো অপ্রত্যাবর্তী স্বতঃস্ফূর্ত প্রক্রিয়ায় মহাবিশ্বের এন্ট্রপি বৃদ্ধি পায় (\\(\\Delta S_{\\text{universe}} > 0\\))।",
+      q12: "কার্নো ইঞ্জিনের দক্ষতা \\(\\eta = \\frac{W}{Q_1} = \\frac{Q_1 - Q_2}{Q_1} = 1 - \\frac{Q_2}{Q_1} = 1 - \\frac{T_2}{T_1}\\)।",
+      q13: "কার্নো চক্রের ৪টি ধাপ হলো: ১. সমউষ্ণ প্রসারণ, ২. রুদ্ধতাপীয় প্রসারণ, ৩. সমউষ্ণ সংকোচন, ৪. রুদ্ধতাপীয় সংকোচন।",
+      q14: "\\(\\eta = 1 - \\frac{T_2}{T_1}\\)। দক্ষতা \\(\\eta = 1\\) বা \\(100\\%\\) হওয়ার জন্য \\(\\frac{T_2}{T_1} = 0 \\implies T_2 = 0\\text{ K}\\) (পরম শূন্য তাপমাত্রা) হতে হবে।",
+      q15: "আদর্শ গ্যাসের অণুগুলোর মধ্যে কোনো আন্তঃআণবিক আকর্ষণ বল থাকে না, তাই এর অভ্যন্তরীণ শক্তি কেবল পরম তাপমাত্রার ফাংশন \\(U = f(T)\\)।",
+      q16: "রুদ্ধতাপীয় পরিবর্তনের ক্ষেত্র চাপ ও আয়তনের সম্পর্ক হলো \\(PV^\\gamma = \\text{constant}\\)।",
+      q17: "দ্বি-পারমাণবিক গ্যাসের (\\(\\text{O}_2, \\text{N}_2\\)) স্বাধীনতার মাত্রা \\(f = 5\\)। তাই \\(\\gamma = 1 + \\frac{2}{5} = 1.40\\)।",
+      q18: "সমচাপ প্রক্রিয়ায় চাপ \\(P\\) ধ্রুব থাকে, তাই কৃতকাজ \\(W = \\int P \\, dV = P(V_2 - V_1)\\)।",
+      q19: "যে প্রক্রিয়ায় সিস্টেম ও তার পরিপার্শ্বের মধ্যে তাপের আদান-প্রদান অবরুদ্ধ থাকে, তাকে রুদ্ধতাপীয় প্রক্রিয়া বলে।",
+      q20: "বাহ্যিক সাহায্য ছাড়া তাপ স্বতঃস্ফূর্তভাবে নিম্ন তাপমাত্রা থেকে উচ্চ তাপমাত্রার দিকে প্রবাহিত হয় না - এটি ক্লাউসিয়াসের দেওয়া তাপগতিবিদ্যার দ্বিতীয় সূত্রের বিবৃতি।",
+      q21: "\\(T_1 = 327 + 273 = 600\\text{ K}\\)<br>\\(T_2 = 27 + 273 = 300\\text{ K}\\)<br>\\(\\eta = \\left(1 - \\frac{300}{600}\\right) \\times 100\\% = 0.5 \\times 100\\% = 50\\%\\)",
+      q22: "রুদ্ধতাপীয় প্রক্রিয়ায় \\(T_1 V_1^{\\gamma-1} = T_2 V_2^{\\gamma-1}\\)।<br>\\(\\frac{T_2}{T_1} = \\left(\\frac{V_1}{V_2}\\right)^{\\gamma-1} = \\left(\\frac{1}{2}\\right)^{1.4 - 1} = (0.5)^{0.4} \\approx 0.758\\)।",
+      q23: "\\(m = 10\\text{ g} = 0.01\\text{ kg}\\), \\(T = 273\\text{ K}\\)<br>\\(dQ = m L_f = 0.01 \\times 3.36 \\times 10^5 = 3360\\text{ J}\\)<br>\\(\\Delta S = \\frac{dQ}{T} = \\frac{3360}{273} \\approx 12.31\\text{ J/K}\\)",
+      q24: "প্রথম ক্ষেত্রে: \\(0.40 = 1 - \\frac{T_2}{T_1} \\implies T_2 = 0.60 T_1\\)<br>দ্বিতীয় ক্ষেত্রে: \\(0.60 = 1 - \\frac{T_2 - 100}{T_1} \\implies T_2 - 100 = 0.40 T_1\\)<br>মান বসিয়ে: \\(0.60 T_1 - 100 = 0.40 T_1 \\implies 0.20 T_1 = 100 \\implies T_1 = 500\\text{ K}\\)।",
+      q25: "P-V ডায়াগ্রামে যেকোনো চক্রাকার প্রক্রিয়ায় সম্পাদিত নেট কাজ চক্রটি দ্বারা বেষ্টিত ক্ষেত্রের ক্ষেত্রফলের সমান (\\(\\oint P \\, dV = \\text{Area}\\))।",
+      q26: "\\(\\text{COP} = \\frac{Q_2}{W} \\implies 5 = \\frac{200}{W} \\implies W = \\frac{200}{5} = 40\\text{ J}\\)।",
+      q27: "রুদ্ধতাপীয় প্রসারণে বাইরের সাথে তাপের কোনো আদান-প্রদান হয় না (\\(\\Delta Q = 0\\))। গ্যাস প্রসারিত হতে কাজ করে, তাই অভ্যন্তরীণ শক্তি ও তাপমাত্রা কমে যায় (শীতলীকরণ ঘটে)।",
+      q28: "\\(W = n R T \\ln\\left(\\frac{V_2}{V_1}\\right) = 1 \\times 8.314 \\times 300 \\times \\ln(3)\\)।<br>\\(W = 2494.2 \\times 1.0986 \\approx 2740\\text{ J}\\)।",
+      q29: "\\(\\gamma = 1 + \\frac{2}{f} = 1 + \\frac{2}{6} = 1 + \\frac{1}{3} = \\frac{4}{3} \\approx 1.33\\)।",
+      q30: "দক্ষতা \\(\\eta = 1 - \\frac{300}{400} = 0.25\\)। কৃতকাজ \\(W = \\eta \\times Q_1 = 0.25 \\times 800\\text{ J} = 200\\text{ J}\\)।"
+    };
+
     const answerKeys = {
       q1: "C", q2: "C", q3: "C", q4: "D", q5: "C",
       q6: "C", q7: "B", q8: "C", q9: "B", q10: "C",
@@ -75,7 +142,6 @@
       document.getElementById('customModal').style.display = 'none';
     };
 
-    // ইন্টারনেট থেকে প্রমানিত সঠিক সময় নেওয়ার সুরক্ষিত ফাংশন
     async function getRealServerTime() {
       try {
         const res = await fetch('https://worldtimeapi.org/api/timezone/Asia/Dhaka');
@@ -171,10 +237,8 @@
       }
     }
 
-    // ৪ সেপ্টেম্বর ২০২৬ রাত ১০:০০ টা (বাংলাদেশ সময়)
-    const examStartTime = new Date("2026-09-04T22:00:00+06:00").getTime();
-    // ৪ সেপ্টেম্বর ২০২৬ রাত ১১:০০ টা (বাংলাদেশ সময়)
-    const examEndTime = new Date("2026-09-04T23:00:00+06:00").getTime();
+    const examStartTime = new Date("2026-08-18T22:00:00+06:00").getTime();
+    const examEndTime = new Date("2026-09-19T12:00:00+06:00").getTime();
 
     async function isExamTimeValid() {
       const now = await getRealServerTime();
@@ -185,11 +249,11 @@
       }
 
       if (now < examStartTime) {
-        showModal("পরীক্ষা ০৪ সেপ্টেম্বর রাত ১০:০০ টায় শুরু হবে। অনুগ্রহ করে অপেক্ষা করুন!");
+        showModal("পরীক্ষা ১৮ সেপ্টেম্বর রাত ১০:০০ টায় শুরু হবে। অনুগ্রহ করে অপেক্ষা করুন!");
         return false;
       }
       if (now > examEndTime) {
-        showModal("পরীক্ষার সময় শেষ হয়ে গেছে! পরীক্ষা ০৪ সেপ্টেম্বর রাত ১১:০০ টা পর্যন্ত ছিল।");
+        showModal("পরীক্ষার সময় শেষ হয়ে গেছে! পরীক্ষা ১৯ সেপ্টেম্বর দুপুর ১২:০০ টা পর্যন্ত ছিল।");
         return false;
       }
       return true;
@@ -305,6 +369,7 @@
 
     async function autoSubmitFromDraft() {
       try {
+        finalTakenSeconds = examDuration - totalSeconds;
         const draftRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'data', 'draft_answers');
         const draftSnap = await getDoc(draftRef);
         
@@ -321,7 +386,7 @@
         }
 
         const examRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'data', 'exam_status');
-        await setDoc(examRef, { score: score, timestamp: serverTimestamp(), autoSubmitted: true }, { merge: true });
+        await setDoc(examRef, { score: score, timestamp: serverTimestamp(), autoSubmitted: true, timeTaken: finalTakenSeconds }, { merge: true });
 
         const lbRef = doc(db, 'artifacts', appId, 'public', 'data', 'leaderboard', currentUser.uid);
         await setDoc(lbRef, {
@@ -329,6 +394,7 @@
           name: userProfile ? userProfile.name : "পরীক্ষার্থী",
           college: userProfile ? userProfile.college : "অজানা",
           score: score,
+          timeTaken: finalTakenSeconds,
           timestamp: serverTimestamp()
         });
 
@@ -341,6 +407,8 @@
     window.submitExam = async function(isTerminated = false) {
       if (timerInterval) clearInterval(timerInterval);
       document.onvisibilitychange = null;
+
+      finalTakenSeconds = examDuration - totalSeconds;
 
       let score = 0;
       let currentAnswers = {};
@@ -359,7 +427,7 @@
       if (currentUser && userProfile) {
         try {
           const examRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'data', 'exam_status');
-          await setDoc(examRef, { score: score, timestamp: serverTimestamp(), terminated: isTerminated }, { merge: true });
+          await setDoc(examRef, { score: score, timestamp: serverTimestamp(), terminated: isTerminated, timeTaken: finalTakenSeconds }, { merge: true });
 
           const lbRef = doc(db, 'artifacts', appId, 'public', 'data', 'leaderboard', currentUser.uid);
           await setDoc(lbRef, {
@@ -367,6 +435,7 @@
             name: userProfile.name,
             college: userProfile.college,
             score: score,
+            timeTaken: finalTakenSeconds,
             timestamp: serverTimestamp()
           });
         } catch(err) { console.error("Save Error:", err); }
@@ -377,12 +446,11 @@
 
     function showResultPage(score) {
       showScreen('resultArea');
-      document.getElementById('scoreDisplayVal').innerText = score;
       
       loadLeaderboard();
       renderAnswerReview();
       
-      switchTab('leaderboard');
+      switchTab('review');
     }
 
     window.switchTab = function(tabName) {
@@ -446,40 +514,105 @@
     }
 
     function renderAnswerReview() {
-      const reviewContainer = document.getElementById('reviewTabContent');
-      reviewContainer.innerHTML = '';
+      let correctCount = 0;
+      let wrongCount = 0;
+      let unattemptedCount = 0;
 
       for (let i = 1; i <= totalQuestions; i++) {
         const qKey = 'q' + i;
-        const origCard = document.getElementById(`qCard-${i}`);
-        
-        if(!origCard) continue;
-
-        const cloneCard = origCard.cloneNode(true);
         const userAns = userAnswers[qKey];
         const correctAns = answerKeys[qKey];
 
-        const options = cloneCard.querySelectorAll('input[type="radio"]');
-        options.forEach(input => {
-          input.disabled = true;
-          const label = input.closest('.option-label');
+        if (!userAns) {
+          unattemptedCount++;
+        } else if (userAns === correctAns) {
+          correctCount++;
+        } else {
+          wrongCount++;
+        }
+      }
+
+      document.getElementById('summaryScore').innerText = `${correctCount} / ${totalQuestions}`;
+      document.getElementById('sumTotal').innerText = totalQuestions;
+      document.getElementById('sumCorrect').innerText = correctCount;
+      document.getElementById('sumWrong').innerText = wrongCount;
+      document.getElementById('sumUnattempted').innerText = unattemptedCount;
+
+      const listContainer = document.getElementById('reviewQuestionsList');
+      listContainer.innerHTML = '';
+
+      for (let i = 1; i <= totalQuestions; i++) {
+        const qKey = 'q' + i;
+        const userAnsKey = userAnswers[qKey];
+        const correctAnsKey = answerKeys[qKey];
+
+        const origCard = document.getElementById(`qCard-${i}`);
+        let qTitle = origCard ? origCard.querySelector('.question-title').innerHTML : `প্রশ্ন ${i}`;
+
+        const opts = optionTexts[qKey];
+        const correctAnsText = opts ? opts[correctAnsKey] : correctAnsKey;
+        
+        let userAnsText = "উত্তর দেওয়া হয়নি";
+        let isUserCorrect = false;
+
+        if (userAnsKey) {
+          userAnsText = opts ? opts[userAnsKey] : userAnsKey;
+          if (userAnsKey === correctAnsKey) {
+            isUserCorrect = true;
+          }
+        }
+
+        let optionsHTML = '';
+        ['A', 'B', 'C', 'D'].forEach(optKey => {
+          const isThisCorrect = (optKey === correctAnsKey);
+          const optClass = isThisCorrect ? 'rev-opt correct' : 'rev-opt';
+          const isChecked = (optKey === userAnsKey) ? 'checked' : '';
           
-          if (input.value === correctAns) {
-            label.classList.add('correct-option');
-          }
-          if (userAns && input.value === userAns) {
-            input.checked = true;
-            if (userAns !== correctAns) {
-              label.classList.add('wrong-option');
-            }
-          }
+          optionsHTML += `
+            <div class="${optClass}">
+              <input type="radio" disabled ${isChecked}>
+              <span>${opts[optKey]}</span>
+            </div>
+          `;
         });
 
-        const solBox = cloneCard.querySelector('.solution-notes');
-        if(solBox) solBox.style.display = 'block';
+        const cardHTML = `
+          <div class="rev-card">
+            <div class="rev-left">
+              <div class="rev-q-title">${qTitle}</div>
+              <div class="rev-options">
+                ${optionsHTML}
+              </div>
+            </div>
 
-        reviewContainer.appendChild(cloneCard);
+            <div class="rev-right">
+              <div class="rev-status-line">
+                <span class="dot green"></span>
+                <strong>সঠিক উত্তর:</strong> <span class="ans-badge green">${correctAnsText}</span>
+              </div>
+              
+              <div class="rev-status-line">
+                <span class="dot ${isUserCorrect ? 'green' : (userAnsKey ? 'red' : 'gray')}"></span>
+                <strong>আপনার উত্তর:</strong> 
+                <span class="ans-badge ${isUserCorrect ? 'green' : (userAnsKey ? 'red' : 'gray')}">
+                  ${userAnsText}
+                </span>
+              </div>
+
+              <div class="rev-explanation-box">
+                <div class="exp-title">ব্যাখ্যা ও সমাধান:</div>
+                <div class="exp-body">
+                  • <strong>সঠিক উত্তর:</strong> <span class="exp-ans">${correctAnsText}</span><br>
+                  ${explanations[qKey] ? `${explanations[qKey]}` : ''}
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+
+        listContainer.insertAdjacentHTML('beforeend', cardHTML);
       }
+
       if (window.MathJax) MathJax.typesetPromise();
     }
   </script>
@@ -487,37 +620,27 @@
   <style>
     :root {
       --blue-marker: #0038a8;
-      --green-gel: #0b6623;
-      --highlight-yellow: #fff3a8;
-      --paper-bg: #fdfbf7;
-      --line-color: #e2e8f0;
-      --margin-line: #ff8585;
-      --badge-red: #d92525;
       --bg-color: #f1f5f9;
+      --card-border: #e2e8f0;
+      --correct-green: #16a34a;
+      --correct-bg: #dcfce7;
+      --wrong-red: #dc2626;
+      --wrong-bg: #fee2e2;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'Hind Siliguri', sans-serif; background-color: var(--bg-color); color: #0f172a; line-height: 1.6; padding: 10px; }
     
-    .container { max-width: 900px; margin: 0 auto; background: #ffffff; border-radius: 12px; box-shadow: 0 4px 25px rgba(0,0,0,0.08); overflow: hidden; min-height: 85vh; position: relative; }
+    .container { max-width: 920px; margin: 0 auto; background: #ffffff; border-radius: 12px; box-shadow: 0 4px 25px rgba(0,0,0,0.08); overflow: hidden; min-height: 85vh; position: relative; }
     
-    .header-banner { background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%); color: #fff; padding: 25px 20px; text-align: center; }
-    .header-banner h1 { font-size: 1.5rem; font-weight: 700; color: #f8fafc; }
-    .header-banner p { font-size: 0.9rem; color: #cbd5e1; }
+    .header-banner { background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%); color: #fff; padding: 20px; text-align: center;  }
+    .header-banner h1 { font-size: 1.4rem; font-weight: 700; color: #f8fafc; }
+    .header-banner p { font-size: 0.88rem; color: #cbd5e1; }
 
-    .screen-section { padding: 30px 20px; }
+    .screen-section { padding: 20px 15px; }
     .card { max-width: 450px; margin: 20px auto; border: 1px solid #cbd5e1; border-radius: 12px; padding: 25px; background: #ffffff; box-shadow: 0 10px 25px rgba(0,0,0,0.05); text-align: center; }
     
-    .schedule-box {
-      background: #f0f9ff;
-      border: 1px dashed #0284c7;
-      border-radius: 8px;
-      padding: 12px;
-      margin-bottom: 20px;
-      text-align: left;
-      font-size: 0.88rem;
-      color: #0369a1;
-    }
+    .schedule-box { background: #f0f9ff; border: 1px dashed #0284c7; border-radius: 8px; padding: 12px; margin-bottom: 20px; text-align: left; font-size: 0.88rem; color: #0369a1; }
     .schedule-box div { font-weight: 600; margin-bottom: 4px; color: #0c4a6e; }
 
     .form-group { margin-bottom: 16px; text-align: left; }
@@ -528,14 +651,30 @@
     .btn { padding: 12px 20px; font-size: 1rem; font-weight: 600; border-radius: 8px; cursor: pointer; border: none; width: 100%; margin-top: 10px; }
     .btn-primary { background: var(--blue-marker); color: white; }
 
-    .timer-bar { position: sticky; top: 0; background: #ffffff; border-bottom: 2px solid var(--blue-marker); padding: 10px 16px; display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; align-items: center; z-index: 90; }
-    .timer-box { font-size: 1.15rem; font-weight: 700; color: var(--badge-red); background: #fef2f2; padding: 4px 12px; border-radius: 20px; border: 1px solid #fca5a5; }
+    /* টাইমার বার - Sticky Top Bar (Fix) */
+    .timer-bar { 
+      position: fixed; 
+      top: 0; 
+      right:0;
+      opacity:0.8;
+      background: #ffffff; 
+      border-bottom: 2px solid var(--blue-marker); 
+      padding: 10px 16px; 
+      display: flex; 
+      flex-wrap: wrap; 
+      gap: 8px; 
+      justify-content: space-between; 
+      align-items: center; 
+      z-index: 1000; 
+      box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    }
+    .timer-box { font-size: 1.15rem; font-weight: 700; color: #d92525; background: #fef2f2; padding: 4px 12px; border-radius: 20px; border: 1px solid #fca5a5; }
     .warning-badge { font-size: 0.85rem; background: #fff7ed; color: #c2410c; padding: 4px 10px; border-radius: 6px; border: 1px solid #ffedd5; font-weight: 600; }
     .answered-badge { font-size: 0.85rem; background: #eff6ff; color: #1d4ed8; padding: 4px 10px; border-radius: 6px; border: 1px solid #bfdbfe; font-weight: 700; }
 
-    .notebook-paper { background-color: var(--paper-bg); background-image: linear-gradient(var(--line-color) 1px, transparent 1px); background-size: 100% 28px; padding: 25px 20px 25px 30px; position: relative; border-left: 3px solid var(--margin-line); }
+    .notebook-paper { background-color: #fdfbf7; padding: 20px 15px; border-left: 3px solid #ff8585; }
 
-    .mcq-card { background: rgba(255, 255, 255, 0.95); border: 1px solid #cbd5e1; border-radius: 10px; padding: 18px; margin-bottom: 20px; position: relative; }
+    .mcq-card { background: #ffffff; border: 1px solid #cbd5e1; border-radius: 10px; padding: 18px; margin-bottom: 20px; }
     .question-title { font-size: 1.05rem; font-weight: 700; color: var(--blue-marker); margin-bottom: 12px; }
     .options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     @media (max-width: 580px) { .options-grid { grid-template-columns: 1fr; } }
@@ -543,16 +682,109 @@
     .option-label { display: flex; align-items: center; padding: 10px 12px; background: #ffffff; border: 1.5px solid #e2e8f0; border-radius: 8px; cursor: pointer; font-size: 0.95rem; }
     .option-label input { margin-right: 10px; accent-color: var(--blue-marker); transform: scale(1.1); }
 
-    .correct-option { background-color: #dcfce7 !important; border-color: #22c55e !important; color: #15803d; font-weight: bold; }
-    .wrong-option { background-color: #fee2e2 !important; border-color: #ef4444 !important; color: #b91c1c; font-weight: bold; }
+    .result-header-card {
+      background: #e0f2fe;
+      border-radius: 12px;
+      padding: 25px 15px;
+      text-align: center;
+      margin-bottom: 25px;
+    }
+    .result-title { font-size: 1.3rem; font-weight: 700; color: #0f172a; margin-bottom: 10px; }
+    .result-score-main { font-size: 2.8rem; font-weight: 800; color: var(--blue-marker); margin-bottom: 15px; }
 
-    .solution-notes { display: none; margin-top: 15px; padding: 14px; background: #f0fdf4; border-left: 4px solid var(--green-gel); border-radius: 0 8px 8px 0; font-family: 'Kalam', 'Hind Siliguri', cursive; color: var(--green-gel); font-size: 1rem; }
-    .solution-notes h4 { font-family: 'Hind Siliguri', sans-serif; color: var(--blue-marker); font-size: 0.95rem; margin-bottom: 4px;}
-    .highlight { background-color: var(--highlight-yellow); padding: 0 4px; border-radius: 3px; color: #000; font-weight: 600; }
-    .blue-heading { color: var(--blue-marker); font-weight: 700; }
+    .summary-badges {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+    .sum-badge {
+      background: #ffffff;
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-size: 0.88rem;
+      border: 1px solid #cbd5e1;
+      color: #334155;
+      font-weight: 600;
+    }
+    .sum-badge.green { color: #16a34a; border-color: #86efac; }
+    .sum-badge.red { color: #dc2626; border-color: #fca5a5; }
 
-    .result-summary { background: linear-gradient(135deg, #f0fdf4 0%, #e0f2fe 100%); border: 1px solid #bae6fd; border-radius: 12px; padding: 20px; text-align: center; margin-bottom: 20px; }
-    .score-badge { font-size: 2.2rem; font-weight: 800; color: var(--blue-marker); }
+    .review-header-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--blue-marker);
+      margin-bottom: 15px;
+      border-bottom: 2px solid var(--blue-marker);
+      padding-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .rev-card {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 18px;
+      margin-bottom: 20px;
+      display: flex;
+      gap: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+    }
+    @media (max-width: 768px) {
+      .rev-card { flex-direction: column; gap: 15px; }
+    }
+
+    .rev-left { flex: 1.1; }
+    .rev-right { flex: 1; border-left: 1px dashed #cbd5e1; padding-left: 18px; }
+    @media (max-width: 768px) {
+      .rev-right { border-left: none; border-top: 1px dashed #cbd5e1; padding-left: 0; padding-top: 15px; }
+    }
+
+    .rev-q-title { font-weight: 700; color: #0038a8; font-size: 1rem; margin-bottom: 12px; }
+    
+    .rev-options { display: flex; flex-direction: column; gap: 8px; }
+    .rev-opt {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      font-size: 0.92rem;
+      background: #fafafa;
+    }
+    .rev-opt.correct {
+      background: #dcfce7;
+      border-color: #86efac;
+      font-weight: 600;
+      color: #14532d;
+    }
+
+    .rev-status-line { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 0.92rem; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+    .dot.green { background: #16a34a; }
+    .dot.red { background: #dc2626; }
+    .dot.gray { background: #94a3b8; }
+
+    .ans-badge { font-weight: 700; padding: 2px 6px; border-radius: 4px; }
+    .ans-badge.green { color: #15803d; }
+    .ans-badge.red { color: #b91c1c; }
+    .ans-badge.gray { color: #475569; }
+
+    .rev-explanation-box {
+      background: #f0fdf4;
+      border-left: 3px solid #16a34a;
+      border-radius: 6px;
+      padding: 12px;
+      margin-top: 12px;
+      font-size: 0.9rem;
+      color: #166534;
+    }
+    .exp-title { font-weight: 700; margin-bottom: 4px; color: #14532d; }
+    .exp-ans { background: #fef08a; padding: 1px 6px; border-radius: 4px; font-weight: 700; color: #854d0e; }
 
     .nav-tabs { display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 2px solid #e2e8f0; }
     .tab-btn { flex: 1; padding: 12px; background: #f1f5f9; border: none; font-family: inherit; font-size: 1rem; font-weight: 700; cursor: pointer; border-top-left-radius: 8px; border-top-right-radius: 8px; color: #64748b; }
@@ -588,7 +820,7 @@
       text-shadow: 0 0 12px rgba(212, 175, 55, 0.3);
     }
 
-    .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.75); display: none; justify-content: center; align-items: center; z-index: 1000; backdrop-filter: blur(4px); }
+    .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.75); display: none; justify-content: center; align-items: center; z-index: 2000; backdrop-filter: blur(4px); }
     .modal-content { background: white; padding: 25px; border-radius: 12px; max-width: 380px; text-align: center; width: 90%; }
   </style>
 </head>
@@ -615,11 +847,10 @@
         <h3 style="color: var(--blue-marker); margin-bottom: 8px;">পরীক্ষার্থীর তথ্য</h3>
         <p style="margin-bottom: 15px; color: #64748b; font-size: 0.85rem;">লিডারবোর্ডের জন্য আপনার সঠিক নাম ও কলেজের নাম দিন।</p>
         
-        <!-- পরীক্ষা শুরু ও শেষ সময়সূচি -->
         <div class="schedule-box">
           <div>📅 পরীক্ষার সময়সূচি:</div>
-          • <strong>পরীক্ষা শুরু:</strong> ০৪ সেপ্টেম্বর ২০২৬, রাত ১০:০০ টা<br>
-          • <strong>পরীক্ষা শেষ:</strong> ০৪ সেপ্টেম্বর ২০২৬, রাত ১১:০০ টা<br>
+          • <strong>পরীক্ষা শুরু:</strong> ১৮ সেপ্টেম্বর ২০২৬, রাত ১০:০০ টা<br>
+          • <strong>পরীক্ষা শেষ:</strong> ১৯ সেপ্টেম্বর ২০২৬, দুপুর ১২:০০ টা<br>
           • <strong>সময়সীমা:</strong> ৩০ মিনিট (৩০টি প্রশ্ন)
         </div>
 
@@ -655,10 +886,6 @@
               <label class="option-label"><input type="radio" name="q1" value="C"> (গ) শূন্যতম সূত্র</label>
               <label class="option-label"><input type="radio" name="q1" value="D"> (ঘ) তৃতীয় সূত্র</label>
             </div>
-            <div class="solution-notes">
-              <h4>ব্যাখ্যা ও সমাধান:</h4>
-              • <span class="blue-heading">সঠিক উত্তর:</span> <span class="highlight">(গ) শূন্যতম সূত্র</span>। তাপগতিবিদ্যার শূন্যতম সূত্র অনুযায়ী, দুটি বস্তু যদি ৩য় কোনো বস্তুর সাথে তাপীয় সাম্যাবস্থায় থাকে, তবে তারা পরস্পরের সাথেও সাম্যাবস্থায় থাকবে। এই নীতির উপর ভিত্তি করেই থার্মোমিটার তৈরি করা হয়।
-            </div>
           </div>
 
           <!-- প্রশ্ন ২ -->
@@ -669,10 +896,6 @@
               <label class="option-label"><input type="radio" name="q2" value="B"> (খ) আধান সংরক্ষণ নীতি</label>
               <label class="option-label"><input type="radio" name="q2" value="C"> (গ) শক্তি সংরক্ষণের নীতি</label>
               <label class="option-label"><input type="radio" name="q2" value="D"> (ঘ) ভর সংরক্ষণ নীতি</label>
-            </div>
-            <div class="solution-notes">
-              <h4>ব্যাখ্যা ও সমাধান:</h4>
-              • <span class="blue-heading">সঠিক উত্তর:</span> <span class="highlight">(গ) শক্তি সংরক্ষণের নীতি</span>। প্রথম সূত্র \(\Delta Q = \Delta U + W\) প্রকাশ করে যে সরবরাহকৃত তাপশক্তি অভ্যন্তরীণ শক্তি বৃদ্ধি ও কাজের রূপান্তরে ব্যবহৃত হয়। অর্থাৎ শক্তি সৃষ্টি বা ধ্বংস হয় না, রূপান্তর হয় মাত্র।
             </div>
           </div>
 
@@ -685,10 +908,6 @@
               <label class="option-label"><input type="radio" name="q3" value="C"> (গ) তাপমাত্রা</label>
               <label class="option-label"><input type="radio" name="q3" value="D"> (ঘ) তাপ</label>
             </div>
-            <div class="solution-notes">
-              <h4>ব্যাখ্যা ও সমাধান:</h4>
-              • <span class="blue-heading">সঠিক উত্তর:</span> <span class="highlight">(গ) তাপমাত্রা</span>। সমউষ্ণ প্রক্রিয়ার সংজ্ঞাই হলো যে প্রক্রিয়ায় সিস্টেমের তাপমাত্রা ধ্রুব থাকে (\(T = \text{constant}\))।
-            </div>
           </div>
 
           <!-- প্রশ্ন ৪ -->
@@ -699,10 +918,6 @@
               <label class="option-label"><input type="radio" name="q4" value="B"> (খ) ঋণাত্মক</label>
               <label class="option-label"><input type="radio" name="q4" value="C"> (গ) অসীম</label>
               <label class="option-label"><input type="radio" name="q4" value="D"> (ঘ) শূন্য</label>
-            </div>
-            <div class="solution-notes">
-              <h4>ব্যাখ্যা ও সমাধান:</h4>
-              • <span class="blue-heading">সঠিক উত্তর:</span> <span class="highlight">(ঘ) শূন্য</span>। আদর্শ গ্যাসের অভ্যন্তরীণ শক্তি কেবল তাপমাত্রার উপর নির্ভর করে (\(U \propto T\))। সমউষ্ণ প্রক্রিয়ায় \(\Delta T = 0\), তাই অভ্যন্তরীণ শক্তির পরিবর্তন \(\Delta U = 0\) হয়।
             </div>
           </div>
 
@@ -715,10 +930,6 @@
               <label class="option-label"><input type="radio" name="q5" value="C"> (গ) সিস্টেমের মোট তাপ (\(Q\))</label>
               <label class="option-label"><input type="radio" name="q5" value="D"> (ঘ) আয়তন</label>
             </div>
-            <div class="solution-notes">
-              <h4>ব্যাখ্যা ও সমাধান:</h4>
-              • <span class="blue-heading">সঠিক উত্তর:</span> <span class="highlight">(গ) সিস্টেমের মোট তাপ (\(Q\))</span>। রুদ্ধতাপীয় প্রক্রিয়ায় সিস্টেম ও পরিবেশের মধ্যে কোনো তাপের আদান-প্রদান ঘটে না (\(\Delta Q = 0\)), অর্থাৎ মোট তাপ স্থির থাকে।
-            </div>
           </div>
 
           <!-- প্রশ্ন ৬ -->
@@ -729,10 +940,6 @@
               <label class="option-label"><input type="radio" name="q6" value="B"> (খ) 1.40</label>
               <label class="option-label"><input type="radio" name="q6" value="C"> (গ) 1.67</label>
               <label class="option-label"><input type="radio" name="q6" value="D"> (ঘ) 1.28</label>
-            </div>
-            <div class="solution-notes">
-              <h4>ব্যাখ্যা ও সমাধান:</h4>
-              • <span class="blue-heading">সঠিক উত্তর:</span> <span class="highlight">(গ) 1.67</span>। একপারমাণবিক গ্যাসের (যেমন: He, Ar) জন্য স্বাধীনতার মাত্রা \(f = 3\)। তাই \(\gamma = 1 + \frac{2}{f} = 1 + \frac{2}{3} \approx 1.67\)।
             </div>
           </div>
 
@@ -745,10 +952,6 @@
               <label class="option-label"><input type="radio" name="q7" value="C"> (গ) \(C_p + C_v = R\)</label>
               <label class="option-label"><input type="radio" name="q7" value="D"> (ঘ) \(C_p / C_v = R\)</label>
             </div>
-            <div class="solution-notes">
-              <h4>ব্যাখ্যা ও সমাধান:</h4>
-              • <span class="blue-heading">সঠিক উত্তর:</span> <span class="highlight">(খ) \(C_p - C_v = R\)</span>। সমচাপ ও সমআয়তন মোলীয় তাপধারণ ক্ষমতার মধ্যকার মেয়ারের সম্পর্ক হলো \(C_p - C_v = R\)।
-            </div>
           </div>
 
           <!-- প্রশ্ন ৮ -->
@@ -759,10 +962,6 @@
               <label class="option-label"><input type="radio" name="q8" value="B"> (খ) \(W = nRT\)</label>
               <label class="option-label"><input type="radio" name="q8" value="C"> (গ) \(W = 0\)</label>
               <label class="option-label"><input type="radio" name="q8" value="D"> (ঘ) \(W = Q\)</label>
-            </div>
-            <div class="solution-notes">
-              <h4>ব্যাখ্যা ও সমাধান:</h4>
-              • <span class="blue-heading">সঠিক উত্তর:</span> <span class="highlight">(গ) \(W = 0\)</span>। কাজ \(W = P \Delta V\)। সমআয়তন প্রক্রিয়ায় আয়তনের পরিবর্তন \(\Delta V = 0\) হওয়ায় কৃতকাজ \(W = 0\)।
             </div>
           </div>
 
@@ -775,10 +974,6 @@
               <label class="option-label"><input type="radio" name="q9" value="C"> (গ) \(\text{K/J}\)</label>
               <label class="option-label"><input type="radio" name="q9" value="D"> (ঘ) \(\text{J}\cdot\text{K}\)</label>
             </div>
-            <div class="solution-notes">
-              <h4>ব্যাখ্যা ও সমাধান:</h4>
-              • <span class="blue-heading">সঠিক উত্তর:</span> <span class="highlight">(খ) \(\text{J/K}\)</span>। এন্ট্রপির পরিবর্তন \(dS = \frac{dQ}{T}\)। তাপের একক জুল (\(\text{J}\)) এবং তাপমাত্রার একক কেলভিন (\(\text{K}\)), ফলে একক হলো \(\text{J/K}\)।
-            </div>
           </div>
 
           <!-- প্রশ্ন ১০ -->
@@ -789,10 +984,6 @@
               <label class="option-label"><input type="radio" name="q10" value="B"> (খ) হ্রাস পায়</label>
               <label class="option-label"><input type="radio" name="q10" value="C"> (গ) শূন্য থাকে</label>
               <label class="option-label"><input type="radio" name="q10" value="D"> (ঘ) অসীম হয়</label>
-            </div>
-            <div class="solution-notes">
-              <h4>ব্যাখ্যা ও সমাধান:</h4>
-              • <span class="blue-heading">সঠিক উত্তর:</span> <span class="highlight">(গ) শূন্য থাকে</span>। প্রত্যাবর্তী প্রক্রিয়ায় সিস্টেম ও পরিবেশের মোট এন্ট্রপির পরিবর্তন শূন্য (\(\Delta S_{\text{universe}} = 0\))।
             </div>
           </div>
 
@@ -805,10 +996,6 @@
               <label class="option-label"><input type="radio" name="q11" value="C"> (গ) শূন্য থাকে</label>
               <label class="option-label"><input type="radio" name="q11" value="D"> (ঘ) ধ্রুব থাকে</label>
             </div>
-            <div class="solution-notes">
-              <h4>ব্যাখ্যা ও সমাধান:</h4>
-              • <span class="blue-heading">সঠিক উত্তর:</span> <span class="highlight">(ক) বৃদ্ধি পায়</span>। তাপগতিবিদ্যার দ্বিতীয় সূত্রানুসারে, প্রকৃতির যেকোনো অপ্রত্যাবর্তী স্বতঃস্ফূর্ত প্রক্রিয়ায় মহাবিশ্বের এন্ট্রপি বৃদ্ধি পায় (\(\Delta S_{\text{universe}} > 0\))।
-            </div>
           </div>
 
           <!-- প্রশ্ন ১২ -->
@@ -819,10 +1006,6 @@
               <label class="option-label"><input type="radio" name="q12" value="B"> (খ) \(1 - \frac{T_2}{T_1}\)</label>
               <label class="option-label"><input type="radio" name="q12" value="C"> (গ) \(\frac{T_1 - T_2}{T_2}\)</label>
               <label class="option-label"><input type="radio" name="q12" value="D"> (ঘ) \(\frac{T_2}{T_1}\)</label>
-            </div>
-            <div class="solution-notes">
-              <h4>ব্যাখ্যা ও সমাধান:</h4>
-              • <span class="blue-heading">সঠিক উত্তর:</span> <span class="highlight">(খ) \(1 - \frac{T_2}{T_1}\)</span>। কার্নো ইঞ্জিনের দক্ষতা \(\eta = \frac{W}{Q_1} = \frac{Q_1 - Q_2}{Q_1} = 1 - \frac{Q_2}{Q_1} = 1 - \frac{T_2}{T_1}\)।
             </div>
           </div>
 
@@ -835,10 +1018,6 @@
               <label class="option-label"><input type="radio" name="q13" value="C"> (গ) ৪ টি</label>
               <label class="option-label"><input type="radio" name="q13" value="D"> (ঘ) ৫ টি</label>
             </div>
-            <div class="solution-notes">
-              <h4>ব্যাখ্যা ও সমাধান:</h4>
-              • <span class="blue-heading">সঠিক উত্তর:</span> <span class="highlight">(গ) ৪ টি</span>। কার্নো চক্রের ৪টি ধাপ হলো: ১. সমউষ্ণ প্রসারণ, ২. রুদ্ধতাপীয় প্রসারণ, ৩. সমউষ্ণ সংকোচন, ৪. রুদ্ধতাপীয় সংকোচন।
-            </div>
           </div>
 
           <!-- প্রশ্ন ১৪ -->
@@ -849,10 +1028,6 @@
               <label class="option-label"><input type="radio" name="q14" value="B"> (খ) \(273\text{ K}\)</label>
               <label class="option-label"><input type="radio" name="q14" value="C"> (গ) \(0\text{ K}\)</label>
               <label class="option-label"><input type="radio" name="q14" value="D"> (ঘ) অসীম</label>
-            </div>
-            <div class="solution-notes">
-              <h4>ব্যাখ্যা ও সমাধান:</h4>
-              • <span class="blue-heading">সঠিক উত্তর:</span> <span class="highlight">(গ) \(0\text{ K}\)</span>। \(\eta = 1 - \frac{T_2}{T_1}\)। দক্ষতা \(\eta = 1\) বা \(100\%\) হওয়ার জন্য \(\frac{T_2}{T_1} = 0 \implies T_2 = 0\text{ K}\) (পরম শূন্য তাপমাত্রা) হতে হবে।
             </div>
           </div>
 
@@ -865,10 +1040,6 @@
               <label class="option-label"><input type="radio" name="q15" value="C"> (গ) কেবল তাপমাত্রা</label>
               <label class="option-label"><input type="radio" name="q15" value="D"> (ঘ) চাপ ও আয়তন উভয়ই</label>
             </div>
-            <div class="solution-notes">
-              <h4>ব্যাখ্যা ও সমাধান:</h4>
-              • <span class="blue-heading">সঠিক উত্তর:</span> <span class="highlight">(গ) কেবল তাপমাত্রা</span>। আদর্শ গ্যাসের অণুগুলোর মধ্যে কোনো আন্তঃআণবিক আকর্ষণ বল থাকে না, তাই এর অভ্যন্তরীণ শক্তি কেবল পরম তাপমাত্রার ফাংশন \(U = f(T)\)।
-            </div>
           </div>
 
           <!-- প্রশ্ন ১৬ -->
@@ -879,10 +1050,6 @@
               <label class="option-label"><input type="radio" name="q16" value="B"> (খ) \(PV^\gamma = \text{ধ্রুবক}\)</label>
               <label class="option-label"><input type="radio" name="q16" value="C"> (গ) \(TV^{\gamma-1} = \text{ধ্রুবক}\)</label>
               <label class="option-label"><input type="radio" name="q16" value="D"> (ঘ) \(P^\gamma V = \text{ধ্রুবক}\)</label>
-            </div>
-            <div class="solution-notes">
-              <h4>ব্যাখ্যা ও সমাধান:</h4>
-              • <span class="blue-heading">সঠিক উত্তর:</span> <span class="highlight">(খ) \(PV^\gamma = \text{ধ্রুবক}\)</span>। রুদ্ধতাপীয় পরিবর্তনের ক্ষেত্র চাপ ও আয়তনের সম্পর্ক হলো \(PV^\gamma = \text{constant}\)।
             </div>
           </div>
 
@@ -895,10 +1062,6 @@
               <label class="option-label"><input type="radio" name="q17" value="C"> (গ) 1.67</label>
               <label class="option-label"><input type="radio" name="q17" value="D"> (ঘ) 1.28</label>
             </div>
-            <div class="solution-notes">
-              <h4>ব্যাখ্যা ও সমাধান:</h4>
-              • <span class="blue-heading">সঠিক উত্তর:</span> <span class="highlight">(খ) 1.40</span>। দ্বি-পারমাণবিক গ্যাসের (\(O_2, N_2\)) স্বাধীনতার মাত্রা \(f = 5\)। তাই \(\gamma = 1 + \frac{2}{5} = 1.40\)।
-            </div>
           </div>
 
           <!-- প্রশ্ন ১৮ -->
@@ -909,10 +1072,6 @@
               <label class="option-label"><input type="radio" name="q18" value="B"> (খ) \(W = P(V_2 - V_1)\)</label>
               <label class="option-label"><input type="radio" name="q18" value="C"> (গ) \(W = nRT\ln(V_2/V_1)\)</label>
               <label class="option-label"><input type="radio" name="q18" value="D"> (ঘ) \(W = C_p\Delta T\)</label>
-            </div>
-            <div class="solution-notes">
-              <h4>ব্যাখ্যা ও সমাধান:</h4>
-              • <span class="blue-heading">সঠিক উত্তর:</span> <span class="highlight">(খ) \(W = P(V_2 - V_1)\)</span>। সমচাপ প্রক্রিয়ায় চাপ \(P\) ধ্রুব থাকে, তাই কৃতকাজ \(W = \int P \, dV = P(V_2 - V_1)\)।
             </div>
           </div>
 
@@ -925,10 +1084,6 @@
               <label class="option-label"><input type="radio" name="q19" value="C"> (গ) সমআয়তন প্রক্রিয়া</label>
               <label class="option-label"><input type="radio" name="q19" value="D"> (ঘ) রুদ্ধতাপীয় প্রক্রিয়া</label>
             </div>
-            <div class="solution-notes">
-              <h4>ব্যাখ্যা ও সমাধান:</h4>
-              • <span class="blue-heading">সঠিক উত্তর:</span> <span class="highlight">(ঘ) রুদ্ধতাপীয় প্রক্রিয়া</span>। যে প্রক্রিয়ায় সিস্টেম ও তার পরিপার্শ্বের মধ্যে তাপের আদান-প্রদান অবরুদ্ধ থাকে, তাকে রুদ্ধতাপীয় প্রক্রিয়া বলে।
-            </div>
           </div>
 
           <!-- প্রশ্ন ২০ -->
@@ -939,10 +1094,6 @@
               <label class="option-label"><input type="radio" name="q20" value="B"> (খ) বাহ্যিক সাহায্য ছাড়া তাপ স্বতঃস্ফূর্তভাবে নিম্ন তাপমাত্রা থেকে উচ্চ তাপমাত্রার দিকে প্রবাহিত হয় না</label>
               <label class="option-label"><input type="radio" name="q20" value="C"> (গ) সিস্টেমের অভ্যন্তরীণ শক্তি ধ্রুব থাকে</label>
               <label class="option-label"><input type="radio" name="q20" value="D"> (ঘ) পরম শূন্য তাপমাত্রায় এন্ট্রপি শূন্য হয়</label>
-            </div>
-            <div class="solution-notes">
-              <h4>ব্যাখ্যা ও সমাধান:</h4>
-              • <span class="blue-heading">সঠিক উত্তর:</span> <span class="highlight">(খ) বাহ্যিক সাহায্য ছাড়া তাপ স্বতঃস্ফূর্তভাবে নিম্ন তাপমাত্রা থেকে উচ্চ তাপমাত্রার দিকে প্রবাহিত হয় না</span>। এটি ক্লাউসিয়াসের দেওয়া তাপগতিবিদ্যার দ্বিতীয় সূত্রের বিবৃতি।
             </div>
           </div>
 
@@ -955,13 +1106,6 @@
               <label class="option-label"><input type="radio" name="q21" value="C"> (গ) \(60\%\)</label>
               <label class="option-label"><input type="radio" name="q21" value="D"> (ঘ) \(75\%\)</label>
             </div>
-            <div class="solution-notes">
-              <h4>ব্যাখ্যা ও সমাধান:</h4>
-              • <span class="blue-heading">সঠিক উত্তর:</span> <span class="highlight">(খ) \(50\%\)</span>।<br>
-              \(T_1 = 327 + 273 = 600\text{ K}\)<br>
-              \(T_2 = 27 + 273 = 300\text{ K}\)<br>
-              \(\eta = \left(1 - \frac{300}{600}\right) \times 100\% = 0.5 \times 100\% = 50\%\)
-            </div>
           </div>
 
           <!-- প্রশ্ন ২২ -->
@@ -972,11 +1116,6 @@
               <label class="option-label"><input type="radio" name="q22" value="B"> (খ) 0.500</label>
               <label class="option-label"><input type="radio" name="q22" value="C"> (গ) 1.319</label>
               <label class="option-label"><input type="radio" name="q22" value="D"> (ঘ) 0.812</label>
-            </div>
-            <div class="solution-notes">
-              <h4>ব্যাখ্যা ও সমাধান:</h4>
-              • <span class="blue-heading">সঠিক উত্তর:</span> <span class="highlight">(ক) 0.758</span>। রুদ্ধতাপীয় প্রক্রিয়ায় \(T_1 V_1^{\gamma-1} = T_2 V_2^{\gamma-1}\)। <br>
-              \(\frac{T_2}{T_1} = \left(\frac{V_1}{V_2}\right)^{\gamma-1} = \left(\frac{1}{2}\right)^{1.4 - 1} = (0.5)^{0.4} \approx 0.758\)।
             </div>
           </div>
 
@@ -989,13 +1128,6 @@
               <label class="option-label"><input type="radio" name="q23" value="C"> (গ) \(14.32\text{ J/K}\)</label>
               <label class="option-label"><input type="radio" name="q23" value="D"> (ঘ) \(11.21\text{ J/K}\)</label>
             </div>
-            <div class="solution-notes">
-              <h4>ব্যাখ্যা ও সমাধান:</h4>
-              • <span class="blue-heading">সঠিক উত্তর:</span> <span class="highlight">(ক) \(12.31\text{ J/K}\)</span>।<br>
-              \(m = 10\text{ g} = 0.01\text{ kg}\), \(T = 273\text{ K}\)<br>
-              \(dQ = m L_f = 0.01 \times 3.36 \times 10^5 = 3360\text{ J}\)<br>
-              \(\Delta S = \frac{dQ}{T} = \frac{3360}{273} \approx 12.31\text{ J/K}\)
-            </div>
           </div>
 
           <!-- প্রশ্ন ২৪ -->
@@ -1006,13 +1138,6 @@
               <label class="option-label"><input type="radio" name="q24" value="B"> (খ) \(500\text{ K}\)</label>
               <label class="option-label"><input type="radio" name="q24" value="C"> (গ) \(600\text{ K}\)</label>
               <label class="option-label"><input type="radio" name="q24" value="D"> (ঘ) \(300\text{ K}\)</label>
-            </div>
-            <div class="solution-notes">
-              <h4>ব্যাখ্যা ও সমাধান:</h4>
-              • <span class="blue-heading">সঠিক উত্তর:</span> <span class="highlight">(খ) \(500\text{ K}\)</span>।<br>
-              প্রথম ক্ষেত্রে: \(0.40 = 1 - \frac{T_2}{T_1} \implies T_2 = 0.60 T_1\)<br>
-              দ্বিতীয় ক্ষেত্রে: \(0.60 = 1 - \frac{T_2 - 100}{T_1} \implies T_2 - 100 = 0.40 T_1\)<br>
-              মান বসিয়ে: \(0.60 T_1 - 100 = 0.40 T_1 \implies 0.20 T_1 = 100 \implies T_1 = 500\text{ K}\)।
             </div>
           </div>
 
@@ -1025,10 +1150,6 @@
               <label class="option-label"><input type="radio" name="q25" value="C"> (গ) অভ্যন্তরীণ শক্তির পরিবর্তন</label>
               <label class="option-label"><input type="radio" name="q25" value="D"> (ঘ) তাপমাত্রার পরিবর্তন</label>
             </div>
-            <div class="solution-notes">
-              <h4>ব্যাখ্যা ও সমাধান:</h4>
-              • <span class="blue-heading">সঠিক উত্তর:</span> <span class="highlight">(ক) চক্র দ্বারা আবদ্ধ ক্ষেত্রের ক্ষেত্রফল</span>। P-V ডায়াগ্রামে যেকোনো চক্রাকার প্রক্রিয়ায় সম্পাদিত নেট কাজ চক্রটি দ্বারা বেষ্টিত ক্ষেত্রের ক্ষেত্রফলের সমান (\(\oint P \, dV = \text{Area}\))।
-            </div>
           </div>
 
           <!-- প্রশ্ন ২৬ -->
@@ -1039,10 +1160,6 @@
               <label class="option-label"><input type="radio" name="q26" value="B"> (খ) \(40\text{ J}\)</label>
               <label class="option-label"><input type="radio" name="q26" value="C"> (গ) \(205\text{ J}\)</label>
               <label class="option-label"><input type="radio" name="q26" value="D"> (ঘ) \(50\text{ J}\)</label>
-            </div>
-            <div class="solution-notes">
-              <h4>ব্যাখ্যা ও সমাধান:</h4>
-              • <span class="blue-heading">সঠিক উত্তর:</span> <span class="highlight">(খ) \(40\text{ J}\)</span>। \(\text{COP} = \frac{Q_2}{W} \implies 5 = \frac{200}{W} \implies W = \frac{200}{5} = 40\text{ J}\)।
             </div>
           </div>
 
@@ -1055,10 +1172,6 @@
               <label class="option-label"><input type="radio" name="q27" value="C"> (গ) অপরিবর্তিত থাকে</label>
               <label class="option-label"><input type="radio" name="q27" value="D"> (ঘ) প্রথমে কমে পরে বাড়ে</label>
             </div>
-            <div class="solution-notes">
-              <h4>ব্যাখ্যা ও সমাধান:</h4>
-              • <span class="blue-heading">সঠিক উত্তর:</span> <span class="highlight">(খ) হ্রাস পায়</span>। রুদ্ধতাপীয় প্রসারণে বাইরের সাথে তাপের কোনো আদান-প্রদান হয় না (\(\Delta Q = 0\))। গ্যাস প্রসারিত হতে কাজ করে, তাই অভ্যন্তরীণ শক্তি ও তাপমাত্রা কমে যায় (শীতলীকরণ ঘটে)।
-            </div>
           </div>
 
           <!-- প্রশ্ন ২৮ -->
@@ -1069,11 +1182,6 @@
               <label class="option-label"><input type="radio" name="q28" value="B"> (খ) \(7482\text{ J}\)</label>
               <label class="option-label"><input type="radio" name="q28" value="C"> (গ) \(1370\text{ J}\)</label>
               <label class="option-label"><input type="radio" name="q28" value="D"> (ঘ) \(3300\text{ J}\)</label>
-            </div>
-            <div class="solution-notes">
-              <h4>ব্যাখ্যা ও সমাধান:</h4>
-              • <span class="blue-heading">সঠিক উত্তর:</span> <span class="highlight">(ক) \(2740\text{ J}\)</span>। \(W = n R T \ln\left(\frac{V_2}{V_1}\right) = 1 \times 8.314 \times 300 \times \ln(3)\)।<br>
-              \(W = 2494.2 \times 1.0986 \approx 2740\text{ J}\)।
             </div>
           </div>
 
@@ -1086,10 +1194,6 @@
               <label class="option-label"><input type="radio" name="q29" value="C"> (গ) 1.33</label>
               <label class="option-label"><input type="radio" name="q29" value="D"> (ঘ) 1.28</label>
             </div>
-            <div class="solution-notes">
-              <h4>ব্যাখ্যা ও সমাধান:</h4>
-              • <span class="blue-heading">সঠিক উত্তর:</span> <span class="highlight">(গ) 1.33</span>। \(\gamma = 1 + \frac{2}{f} = 1 + \frac{2}{6} = 1 + \frac{1}{3} = \frac{4}{3} \approx 1.33\)।
-            </div>
           </div>
 
           <!-- প্রশ্ন ৩০ -->
@@ -1100,10 +1204,6 @@
               <label class="option-label"><input type="radio" name="q30" value="B"> (খ) \(400\text{ J}\)</label>
               <label class="option-label"><input type="radio" name="q30" value="C"> (গ) \(600\text{ J}\)</label>
               <label class="option-label"><input type="radio" name="q30" value="D"> (ঘ) \(100\text{ J}\)</label>
-            </div>
-            <div class="solution-notes">
-              <h4>ব্যাখ্যা ও সমাধান:</h4>
-              • <span class="blue-heading">সঠিক উত্তর:</span> <span class="highlight">(ক) \(200\text{ J}\)</span>। দক্ষতা \(\eta = 1 - \frac{300}{400} = 0.25\)। কৃতকাজ \(W = \eta \times Q_1 = 0.25 \times 800\text{ J} = 200\text{ J}\)।
             </div>
           </div>
 
@@ -1117,21 +1217,37 @@
 
     <!-- ৩. ফলাফল ও রিভিউ স্ক্রিন -->
     <div id="resultArea" class="screen-section" style="display: none;">
-      <div class="result-summary">
-        <h3 style="color: #0f172a; margin-bottom: 5px;">পরীক্ষা সম্পন্ন ও ফলাফল সংরক্ষিত হয়েছে!</h3>
-        <p style="color: #64748b; font-size: 0.9rem;">আপনার প্রাপ্ত নম্বর:</p>
-        <div class="score-badge"><span id="scoreDisplayVal">0</span> <span style="font-size: 1.2rem; color: #64748b;">/ ৩০</span></div>
-        <p style="font-size: 0.9rem; font-weight: 600; color: #0038a8; margin-top: 5px;">আপনার অবস্থান: <span id="userRankVal">-</span></p>
-      </div>
-
-      <!-- ন্যাভিগেশন ট্যাব -->
+      
       <div class="nav-tabs">
-        <button id="tabLbBtn" class="tab-btn active" onclick="switchTab('leaderboard')">🏆 লিডারবোর্ড</button>
-        <button id="tabReviewBtn" class="tab-btn" onclick="switchTab('review')">📝 উত্তর পর্যালোচনা</button>
+        <button id="tabReviewBtn" class="tab-btn active" onclick="switchTab('review')">📝 উত্তর পর্যালোচনা</button>
+        <button id="tabLbBtn" class="tab-btn" onclick="switchTab('leaderboard')">🏆 লিডারবোর্ড</button>
       </div>
 
-      <!-- ট্যাব ১: লিডারবোর্ড -->
-      <div id="leaderboardTabContent">
+      <div id="reviewTabContent">
+        <div class="result-header-card">
+          <div class="result-title">আপনার ফলাফল</div>
+          <div class="result-score-main" id="summaryScore">0 / 30</div>
+          
+          <div class="summary-badges">
+            <span class="sum-badge">মোট প্রশ্ন: <span id="sumTotal">30</span></span>
+            <span class="sum-badge green">সঠিক উত্তর: <span id="sumCorrect">0</span></span>
+            <span class="sum-badge red">ভুল উত্তর: <span id="sumWrong">0</span></span>
+            <span class="sum-badge">উত্তর দেওয়া হয়নি: <span id="sumUnattempted">30</span></span>
+          </div>
+        </div>
+
+        <div class="review-header-title">
+          <span>📝</span> উত্তর পর্যালোচনা
+        </div>
+
+        <div id="reviewQuestionsList">
+        </div>
+      </div>
+
+      <div id="leaderboardTabContent" style="display: none;">
+        <div style="margin-bottom: 15px; text-align: center; font-weight: 600; color: #0038a8;">
+          আপনার অবস্থান: <span id="userRankVal">-</span>
+        </div>
         <div class="lb-container">
           <table>
             <thead>
@@ -1148,12 +1264,9 @@
         </div>
       </div>
 
-      <!-- ট্যাব ২: উত্তর পর্যালোচনা -->
-      <div id="reviewTabContent" class="notebook-paper" style="display: none;">
-      </div>
     </div>
 
-    <!-- গোল্ডেন ও ব্ল্যাক শেড ফুটার -->
+    <!-- ফুটার -->
     <div class="footer-notice">
       <span class="golden-text">Developed by Rimit</span> <br>
       <span class="golden-text">Exam Question: Made by Rimit</span>
