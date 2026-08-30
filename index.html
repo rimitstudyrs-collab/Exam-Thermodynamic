@@ -631,7 +631,7 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'Hind Siliguri', sans-serif; background-color: var(--bg-color); color: #0f172a; line-height: 1.6; padding: 10px; }
     
-    .container { max-width: 920px; margin: 0 auto; background: #ffffff; border-radius: 12px; box-shadow: 0 4px 25px rgba(0,0,0,0.08); overflow: hidden; min-height: 85vh; position: relative; }
+    .container { max-width: 920px; margin: 0 auto; background: #ffffff; border-radius: 12px; box-shadow: 0 4px 25px rgba(0,0,0,0.08); overflow: visible; min-height: 85vh; position: relative; }
     
     .header-banner { background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%); color: #fff; padding: 20px; text-align: center;  }
     .header-banner h1 { font-size: 1.4rem; font-weight: 700; color: #f8fafc; }
@@ -653,10 +653,10 @@
 
     /* টাইমার বার - Sticky Top Bar (Fix) */
     .timer-bar { 
-      position: fixed; 
+      position: sticky; 
       top: 0; 
-      right:0;
-      opacity:0.8;
+      z-index:100;
+      
       background: #ffffff; 
       border-bottom: 2px solid var(--blue-marker); 
       padding: 10px 16px; 
